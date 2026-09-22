@@ -12,17 +12,23 @@ source:
 build:
   number: {{ build }}
   string: h{{ PKG_HASH }}_{{ build }}
+  script_env:
+    - OSKAR_CUDA_ARCH  # optional override of the CUDA_ARCH list, e.g. "9.0" for a local GH200-only build
 
 requirements:
   build:
     # Build against Conda's portable Linux sysroot instead of the runner's GLIBC.
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
+    - {{ compiler('cuda') }}
     - {{ stdlib('c') }}
     - cmake >=3.10,<4
     - make
 
   host:
+    - cuda-version {{ cuda_compiler_version }}
+    - cuda-cudart-dev
+    - libcufft-dev
     - casacore={{ CASACORE_VERSION_ALT }}
     - harp
     - hdf5
