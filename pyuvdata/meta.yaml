@@ -7,7 +7,7 @@ package:
 # linux-aarch64 there. This recipe (adapted from conda-forge/pyuvdata-feedstock at
 # d59e280, v2.4.5) provides it on the i4ds channel for every arch CI builds.
 source:
-  url: https://pypi.io/packages/source/p/pyuvdata/pyuvdata-{{ PYUVDATA_VERSION }}.tar.gz
+  url: https://files.pythonhosted.org/packages/source/p/pyuvdata/pyuvdata-{{ PYUVDATA_VERSION }}.tar.gz
   sha256: 31934f3611557d25e010b123c26d4ce1a8a9c1145df1e8d5adcebab3409ca6f1  # 2.4.5
 
 build:

@@ -3,7 +3,7 @@ package:
   version: {{ PYBDSF_VERSION_ALT }}
 
 source:
-  url: https://pypi.io/packages/source/b/{{ PACKAGE_NAME }}/{{ PACKAGE_NAME }}-{{ PYBDSF_VERSION }}.tar.gz
+  url: https://files.pythonhosted.org/packages/source/b/{{ PACKAGE_NAME }}/{{ PACKAGE_NAME }}-{{ PYBDSF_VERSION }}.tar.gz
 
 build:
   number: {{ build }}
