@@ -222,44 +222,44 @@ jobs:
         run: |
           echo "arch=noarch" >> $GITHUB_ENV
       - name: Check for an anaconda.org token
-        # Forks without ANACONDA_SECRET can still build (and see the build fail or pass);
-        # only the upload and the install-from-channel test are skipped.
+        # Forks without ANACONDA_SECRET can still build a package that has no feedstock
+        # dependencies (and see the build fail or pass); the upload and the install-from-channel
+        # test are skipped. Packages that depend on other feedstock packages (wsclean, oskarpy,
+        # ska-sdp-datamodels, ska-sdp-func-python) need those uploaded first, i.e. a token.
         id: token
         env:
           TOKEN: ${{ secrets.ANACONDA_SECRET }}
         run: |
-          if [[ -n "$TOKEN" ]]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::ANACONDA_SECRET not set - build only, no upload"; fi
+          if [[ -n "$TOKEN" ]]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::ANACONDA_SECRET not set - build only, no upload, no install test; dependent packages need uploads"; fi
       - name: Install and publish to Conda
         if: steps.token.outputs.present == 'true'
         shell: bash -l {0}
         run: |
           conda activate base
           conda install anaconda-client
-          anaconda -t ${{ secrets.ANACONDA_SECRET }} upload --skip-existing "$(conda info --base)/conda-bld/${{ env.arch }}/${{ inputs.packageName }}"*.conda --label ${{ inputs.label }}
+          anaconda -t ${{ secrets.ANACONDA_SECRET }} upload "$(conda info --base)/conda-bld/${{ env.arch }}/${{ inputs.packageName }}"*.conda --label ${{ inputs.label }}
 
 
   test_base:
     needs: build_base
-    # The test installs the package from the i4ds channel, so it needs the upload to have happened.
+    # The test installs the package from the channel, so it needs the upload to have happened.
     if: ${{ !inputs.skipTest && needs.build_base.outputs.uploaded == 'true' }}
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.isNative && '["ubuntu-latest", "ubuntu-24.04-arm"]' || '["ubuntu-latest"]') }}
+        # noarch packages are built once but must install on every platform, so always test both.
+        os: ["ubuntu-latest", "ubuntu-24.04-arm"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        if: ${{ !inputs.skipTest }}
         uses: actions/checkout@v4
 
       - name: Install Conda
-        if: ${{ !inputs.skipTest }}
         uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
 
       - name: Install Mamba Solver
-        if: ${{ !inputs.skipTest }}
         run: |
           conda install -y -n base conda-libmamba-solver
           conda config --set solver libmamba
@@ -273,7 +273,6 @@ jobs:
 
       # Karabo is Python 3.12 only (Karabo-Pipeline #700); several recipes build for 3.12 only.
       - name: Install Package and test with Python 3.12
-        if: ${{ !inputs.skipTest }}
         shell: bash -l {0}
         run: |
           conda create -y -n testenv12 python=3.12
