@@ -17,6 +17,7 @@ requirements:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
     - {{ compiler('gfortran') }}
+    - {{ stdlib('c') }}
     - cmake >=3.18,<4
     - python {{ python }}
     - numpy {{ numpy }}
