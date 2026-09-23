@@ -60,6 +60,9 @@ env:
   # Other
   PACKAGE_NAME: ${{ inputs.packageName }}
   CHANNEL_LABEL: ${{ inputs.label }}
+  # anaconda.org channel to solve against and (with ANACONDA_SECRET) upload to.
+  # Forks set the repository variable ANACONDA_CHANNEL to their own channel.
+  CHANNEL: ${{ vars.ANACONDA_CHANNEL || 'i4ds' }}
 
 on:
   workflow_call:
@@ -131,6 +134,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     outputs:
       pkgv: ${{ steps.pkgv.outputs.version }}
+      uploaded: ${{ steps.token.outputs.present }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -199,13 +203,13 @@ jobs:
           conda config --remove-key channels || true # remove all existing channels
 
           conda config --add channels conda-forge
-          conda config --add channels i4ds/label/${{ inputs.label }}
-          conda config --add channels i4ds
+          conda config --add channels ${{ env.CHANNEL }}/label/${{ inputs.label }}
+          conda config --add channels ${{ env.CHANNEL }}
           conda config --add channels defaults
           conda config --set channel_priority flexible
           conda install "conda-build>=25"
 
-          conda build -c i4ds/label/${{ inputs.label }} -c i4ds -c conda-forge ${{ env.recipePath }}
+          conda build -c ${{ env.CHANNEL }}/label/${{ inputs.label }} -c ${{ env.CHANNEL }} -c conda-forge ${{ env.recipePath }}
 
       - name: Set native platform as architecture
         if: ${{ inputs.isNative }}
@@ -216,16 +220,27 @@ jobs:
         if: ${{ !inputs.isNative }}
         run: |
           echo "arch=noarch" >> $GITHUB_ENV
+      - name: Check for an anaconda.org token
+        # Forks without ANACONDA_SECRET can still build (and see the build fail or pass);
+        # only the upload and the install-from-channel test are skipped.
+        id: token
+        env:
+          TOKEN: ${{ secrets.ANACONDA_SECRET }}
+        run: |
+          if [[ -n "$TOKEN" ]]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::ANACONDA_SECRET not set - build only, no upload"; fi
       - name: Install and publish to Conda
+        if: steps.token.outputs.present == 'true'
         shell: bash -l {0}
         run: |
           conda activate base
           conda install anaconda-client
-          anaconda -t ${{ secrets.ANACONDA_SECRET }} upload "$(conda info --base)/conda-bld/${{ env.arch }}/${{ inputs.packageName }}"*.conda --label ${{ inputs.label }}
+          anaconda -t ${{ secrets.ANACONDA_SECRET }} upload --skip-existing "$(conda info --base)/conda-bld/${{ env.arch }}/${{ inputs.packageName }}"*.conda --label ${{ inputs.label }}
 
 
   test_base:
     needs: build_base
+    # The test installs the package from the i4ds channel, so it needs the upload to have happened.
+    if: ${{ !inputs.skipTest && needs.build_base.outputs.uploaded == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -262,7 +277,7 @@ jobs:
         run: |
           conda create -y -n testenv10 python=3.10
           conda activate testenv10
-          conda install -y -c i4ds/label/${{ inputs.label }} -c i4ds -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}"
+          conda install -y -c ${{ env.CHANNEL }}/label/${{ inputs.label }} -c ${{ env.CHANNEL }} -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}"
           python -c "${{ inputs.pythonCall }}"
 
       - name: Install Package and test with Python 3.11
@@ -272,7 +287,7 @@ jobs:
         run: |
           conda create -y -n testenv11 python=3.11
           conda activate testenv11
-          conda install -y -c i4ds/label/${{ inputs.label }} -c i4ds -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}"
+          conda install -y -c ${{ env.CHANNEL }}/label/${{ inputs.label }} -c ${{ env.CHANNEL }} -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}"
           python -c "${{ inputs.pythonCall }}"
 
       - name: Install Package and test with Python 3.12
@@ -282,6 +297,6 @@ jobs:
         run: |
           conda create -y -n testenv12 python=3.12
           conda activate testenv12
-          conda install -y -c i4ds/label/${{ inputs.label }} -c i4ds -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}"
+          conda install -y -c ${{ env.CHANNEL }}/label/${{ inputs.label }} -c ${{ env.CHANNEL }} -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}"
           python -c "${{ inputs.pythonCall }}"
 
