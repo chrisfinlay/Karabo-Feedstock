@@ -12,8 +12,6 @@ source:
 build:
   number: {{ build }}
   string: h{{ PKG_HASH }}_{{ build }}
-  script_env:
-    - OSKAR_CUDA_ARCH  # optional override of the CUDA_ARCH list, e.g. "9.0" for a local GH200-only build
 
 requirements:
   build:
@@ -21,6 +19,7 @@ requirements:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
     - {{ compiler('cuda') }}
+    - cuda-cuobjdump  # build.sh checks which GPU architectures ended up in the library
     - {{ stdlib('c') }}
     - cmake >=3.10,<4
     - make
