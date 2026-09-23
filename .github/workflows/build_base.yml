@@ -119,6 +119,11 @@ on:
         default: false
         type: boolean
 
+      buildArm:  # also build/test on ubuntu-24.04-arm (native recipes ported to linux-aarch64)
+        required: false
+        default: false
+        type: boolean
+
       skipTest:
         required: false
         default: false
@@ -126,15 +131,16 @@ on:
 
 jobs:
   build_base:
-    # Native (compiled) recipes are built on both x86-64 and ARM64 runners; noarch recipes
-    # only once, so the same file is not uploaded twice.
+    # Native recipes ported to ARM (buildArm) are built on both x86-64 and ARM64 runners; noarch
+    # recipes and unported native recipes on x86-64 only.
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.isNative && '["ubuntu-latest", "ubuntu-24.04-arm"]' || '["ubuntu-latest"]') }}
+        os: ${{ fromJSON(inputs.isNative && inputs.buildArm && '["ubuntu-latest", "ubuntu-24.04-arm"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     outputs:
       pkgv: ${{ steps.pkgv.outputs.version }}
+      bnr: ${{ steps.pkgv.outputs.build }}
       uploaded: ${{ steps.token.outputs.present }}
     steps:
       - name: Checkout repository
@@ -143,14 +149,27 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
-      # The CUDA recipes take nvcc and the CUDA libraries from conda-forge (cuda-nvcc,
-      # cuda-cudart-dev, ...), so no toolkit or compiler is installed on the runner.
+      # Ported CUDA recipes (buildArm) take nvcc and the CUDA libraries from conda-forge. Recipes
+      # that were not ported (idg, bipp, finufft) still expect a toolkit on the x86-64 runner.
+      - name: Install GCC 11 for CUDA 12
+        if: ${{ inputs.useCuda && !inputs.buildArm }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-11 g++-11
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
       - name: Free disk space on runner
         if: ${{ inputs.useCuda }}
         run: |
           sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet || true
           docker system prune -af || true
           df -h
+      - name: Install Cuda Toolkit (unported CUDA recipes)
+        if: ${{ inputs.useCuda && !inputs.buildArm }}
+        uses: Jimver/cuda-toolkit@v0.2.25
+        with:
+          cuda: '12.0.1'
+          log-file-suffix: 'build'
       - name: Set custom path to recipe
         if: inputs.customPath != ''
         run: |
@@ -177,6 +196,7 @@ jobs:
             DEV_DEPS_LIST=""
           fi
           echo "build=$BUILD_NR" >> "$GITHUB_ENV"
+          echo "build=$BUILD_NR" >> "$GITHUB_OUTPUT"
           echo "version=$PKG_VERSION" >> $GITHUB_OUTPUT
 
 
@@ -243,12 +263,14 @@ jobs:
   test_base:
     needs: build_base
     # The test installs the package from the channel, so it needs the upload to have happened.
-    if: ${{ !inputs.skipTest && needs.build_base.outputs.uploaded == 'true' }}
+    # !cancelled(): a failed leg of the build matrix must not skip the tests of the other leg.
+    if: ${{ !cancelled() && !inputs.skipTest && needs.build_base.outputs.uploaded == 'true' }}
     strategy:
       fail-fast: false
       matrix:
-        # noarch packages are built once but must install on every platform, so always test both.
-        os: ["ubuntu-latest", "ubuntu-24.04-arm"]
+        # noarch packages are built once but must install on every platform, so test them on
+        # both; native packages on the platforms they were built for.
+        os: ${{ fromJSON((!inputs.isNative || inputs.buildArm) && '["ubuntu-latest", "ubuntu-24.04-arm"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -265,7 +287,7 @@ jobs:
           conda config --set solver libmamba
 
       - name: Free disk space on runner (test)
-        if: ${{ inputs.useCuda && !inputs.skipTest }}
+        if: ${{ inputs.useCuda }}
         run: |
           sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet || true
           docker system prune -af || true
@@ -277,6 +299,8 @@ jobs:
         run: |
           conda create -y -n testenv12 python=3.12
           conda activate testenv12
-          conda install -y -c ${{ env.CHANNEL }}/label/${{ inputs.label }} -c ${{ env.CHANNEL }} -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}"
+          # Exactly the build just uploaded (version=*_<buildNumber>), so an older package with a
+          # higher build number on the channel cannot be tested instead.
+          conda install -y -c ${{ env.CHANNEL }}/label/${{ inputs.label }} -c ${{ env.CHANNEL }} -c conda-forge ${{ inputs.packageName }}="${{ needs.build_base.outputs.pkgv }}=*_${{ needs.build_base.outputs.bnr }}"
           python -c "${{ inputs.pythonCall }}"
 

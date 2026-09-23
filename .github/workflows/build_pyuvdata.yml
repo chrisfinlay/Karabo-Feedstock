@@ -41,4 +41,5 @@ jobs:
       buildNumber: ${{ inputs.buildNumber }}
       pythonCall: import pyuvdata
       isNative: true
+      buildArm: true
     secrets: inherit
