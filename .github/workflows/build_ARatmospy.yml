@@ -40,5 +40,5 @@ jobs:
       dev: ${{ inputs.dev }}
       buildNumber: ${{ inputs.buildNumber }}
       pythonCall: import aratmospy
-      isNative: true
+      isNative: false
     secrets: inherit
